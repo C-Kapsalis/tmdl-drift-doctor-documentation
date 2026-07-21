@@ -18,11 +18,13 @@ Prerequisites
   models and see the drift visually; see the examples README's guide to
   opening the models in Power BI Desktop.
 
-Install the package from a checkout of this repository (identical in
-every shell):
+Clone the repository, then install the package from inside it (the
+commands are identical in every shell):
 
 ::
 
+    $ git clone https://github.com/c-kapsalis/tmdl-drift-doctor.git
+    $ cd tmdl-drift-doctor
     $ pip install .
     $ drift-doctor --version
 
