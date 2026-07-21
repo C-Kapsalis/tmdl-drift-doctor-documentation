@@ -36,8 +36,7 @@ ledger that answers "why did this change" months later.
    :maxdepth: 1
 
    tutorials/getting-started
-   how-to/manage-a-fleet
-   how-to/run-in-ci
+   how-to/index
    reference/cli-and-configuration
    reference/drift-kinds-and-ledger
    contributing

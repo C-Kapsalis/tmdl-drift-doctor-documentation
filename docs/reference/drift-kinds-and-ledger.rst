@@ -231,7 +231,7 @@ Exit-code semantics
 alone exit 0. ``remediate`` exits 1 only when an apply failed.
 
 Ledger format
-=================
+-----------------
 
 ``<state_dir>/ledger.jsonl`` is one JSON object per line, append-only.
 Fleet remediation mutates other people's models in bulk, and an
@@ -244,7 +244,7 @@ every read fail loudly rather than being silently skipped or, worse,
 silently mistargeting a removal.
 
 Common fields
-----------------
+~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -269,7 +269,7 @@ Reference formats: tables use ``TableName``; columns and measures use
 ``Table[Object]``; mapping rows use ``Table/row_key``.
 
 ``retired``
---------------
+~~~~~~~~~~~~~~
 
 Appended by ``capture`` when an object present in the previous baseline
 is absent from the fresh snapshot. This is the proof of ex-template
@@ -285,7 +285,7 @@ existence that authorizes later removal.
 ``row_key``.
 
 ``revived``
---------------
+~~~~~~~~~~~~~~
 
 Cancels an active retirement without erasing it. This is the escape
 hatch when reality overrides a retirement: the template takes an
@@ -312,7 +312,7 @@ records a deliberate re-add.
      - Optional human reason
 
 ``remediated``
-------------------
+~~~~~~~~~~~~~~~~~~
 
 Appended by ``remediate`` for every applied action, never in
 ``--dry-run``.
@@ -329,7 +329,7 @@ Here ``kind`` is the finding kind (for example ``measure.missing``,
 done, and ``files`` lists every file the action touched.
 
 The fold: how state is derived
-------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``active_retirements(model)`` walks the stream in order: ``retired``
 puts ``(kind, ref)`` in force; ``revived`` removes it, for everyone if
