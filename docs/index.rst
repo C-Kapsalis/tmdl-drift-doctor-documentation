@@ -1,39 +1,43 @@
 tmdl-drift-doctor
 ==================
 
-Drift detection and auto-remediation for fleets of TMDL-format Power BI
-semantic models derived from one template. You maintain one template
-("golden") model and a copy per client; ``tmdl-drift-doctor`` captures a
-baseline of the template, detects typed drift findings in every derived
-model, and remediates them through an auditable, allowlist-gated cascade
-of template truth back out to the fleet. Deletions require double
-opt-in, every applied fix lands in an append-only ledger, and
-``--dry-run`` shows the exact diffs first.
+Drift detection and remediation for a fleet of TMDL-format Power BI
+semantic models derived from one template. You maintain one "golden"
+model and a copy per client; ``tmdl-drift-doctor`` captures a baseline
+of the template, detects typed drift findings in every derived model,
+and cascades template truth back out through an auditable,
+allowlist-gated pipeline. Deletions need a second opt-in, every applied
+fix lands in an append-only ledger, and ``--dry-run`` shows the exact
+diffs before anything is written.
 
-The documentation follows the `Diátaxis <https://diataxis.fr/>`_
-framework: tutorials teach, how-to guides solve, reference informs,
-explanation deepens.
+Audience
+-----------
+
+This is written for BI developers who already run a template-and-fleet
+setup, or are about to: one governed semantic model, cloned or forked
+per client, tenant, or region. It assumes you are comfortable with
+Power BI's TMDL format and can read a ``fleet.yml`` and a raw TMDL block
+without a primer.
+
+Why this matters
+--------------------
+
+`tmdl-preflight <https://tmdl-preflight-documentation.readthedocs.io/en/latest/index.html>`_
+keeps one model honest against a rule catalog; ``tmdl-drift-doctor``
+keeps a whole fleet of models honest against each other. The two
+problems compound: a template that passes preflight still drifts from
+its derived copies the moment someone edits a client model directly,
+and a fleet with no drift tooling turns "does every client have the
+latest KPI" into an afternoon of diffing folders by hand. Capture,
+detect, and remediate turn that afternoon into three commands, with a
+ledger that answers "why did this change" months later.
 
 .. toctree::
    :maxdepth: 1
 
    tutorials/getting-started
-   how-to/add-a-model
-   how-to/cascade-a-column-retirement
-   how-to/recover-from-unwanted-remediation
+   how-to/manage-a-fleet
    how-to/run-in-ci
-   reference/cli
-   reference/configuration
-   reference/drift-kinds
-   reference/ledger-format
-   explanation/baseline-recapture-discipline
-   explanation/allowlist-only-cascading
-   explanation/ledger-and-revival
-   explanation/safe-tmdl-surgery
-   explanation/missing-objects
-   explanation/expression-drift
-   explanation/property-drift
-   explanation/extra-objects
-   explanation/object-retirement
-   explanation/column-retirement
-   explanation/mapping-row-retirement
+   reference/cli-and-configuration
+   reference/drift-kinds-and-ledger
+   contributing

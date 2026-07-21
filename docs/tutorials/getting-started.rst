@@ -97,7 +97,7 @@ non-destructive kind and lists ``retire.measure``, which still needs
 The baseline is the committed statement of what the template contains.
 Every ``detect`` and ``remediate`` run compares derived models against
 it, and refuses to run if the template has changed since (see
-:doc:`../explanation/baseline-recapture-discipline`).
+:doc:`../reference/cli-and-configuration`).
 
 3. Detect the seeded drift
 -------------------------------
@@ -134,7 +134,7 @@ makes it a CI gate. Two more things to notice:
 
 - ``extra.measure`` is tagged advisory: alpha's own ``Alpha Loyalty
   Score`` is a legitimate franchise extension. The suite reports it and
-  will never delete it (see :doc:`../explanation/extra-objects`).
+  will never delete it (see :doc:`../reference/drift-kinds-and-ledger`).
 - The ``Data Source`` parameter also differs in both franchises, and is
   not flagged, because only allowlist-named shared expressions are
   compared. Cascading connection parameters would repoint every
@@ -217,8 +217,8 @@ Where to go next
   revive it on one franchise. It also has an open-in-Power-BI-Desktop
   loop so you can watch a drifted measure change before and after
   remediation (Windows plus Power BI Desktop).
-- :doc:`../how-to/cascade-a-column-retirement`: the removal side of the
-  workflow, step by step.
+- :doc:`../how-to/manage-a-fleet`: onboarding a model, cascading a
+  retirement, and recovering from an unwanted removal, step by step.
 - :doc:`../how-to/run-in-ci`: make drift a build signal.
-- :doc:`../reference/drift-kinds`: every kind, its detection rule, and
-  its remediation.
+- :doc:`../reference/drift-kinds-and-ledger`: every kind, its detection
+  rule, and its remediation.
