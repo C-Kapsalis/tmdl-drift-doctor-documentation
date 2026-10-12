@@ -44,14 +44,20 @@ Project layout
 ::
 
     src/tmdl_drift_doctor/
-    |-- cli.py          # Click entry point: capture / detect / remediate / ledger
-    |-- fleet.py        # fleet.yml loader + Fleet dataclass (paths, allowlist)
-    |-- tmdl.py         # TMDL folder-format parser -> Model / tables / measures / ...
+    |-- cli.py          # Click entry point: capture / detect / remediate /
+    |                   #   ratchet / audit / review / ledger
+    |-- fleet.py        # fleet.yml loader + Fleet (paths, allowlist, gating, overrides)
+    |-- overrides.py    # resolve per-model overrides; what each one acknowledges
+    |-- tmdl.py         # TMDL parser (tables, measures, relationships, hierarchies)
+    |                   #   + string-aware normalization and DAX references
     |-- baseline.py     # `capture`: snapshot the template, maintain retirements
-    |-- detect.py       # `detect`: typed Finding objects, one per divergence
-    |-- remediate.py    # `remediate`: appliers per kind + the gate engine
+    |-- detect.py       # `detect`: typed Findings, coupling guard, JSON report
+    |-- remediate.py    # `remediate`: appliers, preconditions, phases, --converge
     |-- tmdl_edit.py    # guarded raw-block TMDL surgery + write validators
-    `-- ledger.py       # append-only JSONL audit trail (retire/revive/remediated)
+    |-- ledger.py       # append-only JSONL audit trail (retire/revive/remediated)
+    |-- ratchet.py      # `ratchet check|tighten`: per-model floors
+    |-- audit.py        # `audit`: re-verify applied fixes from the ledger
+    `-- review.py       # `review`: the human review checklist
 
     tests/              # pytest suite + tests/fixtures/fleet/ (the seeded fleet)
     examples/fleet/     # runnable gym-chain fleet with drift pre-seeded
@@ -131,9 +137,12 @@ order:
 3. **``remediate.py``.** Write an applier, ``_apply_your_kind(fleet, f)``,
    that returns ``(label, [FileChange])`` (a ``FileChange`` with
    ``old=None`` creates, ``new=None`` deletes) and register it in the
-   ``APPLIERS`` dict. The engine handles the allowlist, ``--sync``,
-   dry-run, and pre-write validation; appliers must be idempotent, so a
-   second run finds nothing to do.
+   ``APPLIERS`` dict. The engine handles overrides, the allowlist,
+   ``--sync``, blocked retirements, dry-run, and pre-write validation;
+   appliers must be idempotent, so a second run finds nothing to do. If
+   the fix relies on something else existing, add a precondition to
+   ``PRECONDITIONS`` and place the kind in ``PHASES``; if an override
+   should be able to acknowledge it, add it to ``overrides.SUPPRESSES``.
 4. **Fixtures and tests.** Seed the new drift in
    ``tests/fixtures/fleet/`` (the fixture fleet doubles as the suite's
    readable specification) and add coverage under ``tests/`` (detection,
