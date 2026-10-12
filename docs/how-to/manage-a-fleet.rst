@@ -40,9 +40,29 @@ of drift. Read the findings before remediating:
 - Missing objects are usually safe to cascade.
 - Expression and property drift overwrite the derived version; check
   the diffs with ``--dry-run`` in case the divergence was deliberate.
-  If it was, leave it (it keeps getting reported) or narrow the
-  allowlist.
+  If it was, declare it as an override on the model's entry (below).
 - Extras are advisory; nothing touches them.
+
+Record every deliberate difference as an override instead of leaving it
+as standing drift. Switch the model to the long form:
+
+::
+
+    models:
+      charlie:
+        path: franchises/charlie/GymChain.SemanticModel
+        gating: advisory            # optional, while onboarding
+        overrides:
+          - object: Visits[Total Visits]
+            kind: expression        # keeps its own definition
+            reason: charlie excludes zero-minute visits by contract
+            owner: charlie-analytics
+            added: 2026-10-12
+
+``gating: advisory`` keeps a freshly onboarded model from failing
+``detect`` and the ratchet while its backlog is worked down; switch it
+back to ``enforced`` (or drop the key) once it is clean, then record its
+floor with ``drift-doctor ratchet tighten --allow-new``.
 
 Then cascade one kind at a time rather than everything at once:
 
@@ -52,6 +72,9 @@ Then cascade one kind at a time rather than everything at once:
     $ drift-doctor remediate --model charlie --kind measure.missing
     $ drift-doctor remediate --model charlie --kind measure.expression_drift --dry-run
     ...
+
+Once you trust the kinds, ``drift-doctor remediate --model charlie
+--converge`` runs them all and re-detects until nothing changes.
 
 If objects were retired from the template before charlie joined the
 fleet, the ledger already lists them, and ``detect`` flags any that
@@ -107,7 +130,14 @@ See who still carries it:
 
     $ drift-doctor detect --kind retire.
     -- alpha: 1 finding(s)
+      retire.column                Classes[Capacity]  [blocked]
+          blocked:  derived-only definition(s) reference it: Classes[Alpha Seats Left]
+    -- bravo: 1 finding(s)
       retire.column                Classes[Capacity]
+
+(This is the example fleet after a full remediation: alpha's own
+``Alpha Seats Left`` measure still reads the column, so its removal is
+refused until a person decides.)
 
 Retirements are deletions, so they are double-gated: the kind must be
 in the allowlist (``retire.column``) and the run must opt in with
@@ -117,7 +147,8 @@ in the allowlist (``retire.column``) and the run must opt in with
 
     $ drift-doctor remediate --kind retire.column --sync --dry-run   # preview
     $ drift-doctor remediate --kind retire.column --sync
-    [applied] alpha: retire.column Classes[Capacity] - remove retired column block
+    [BLOCKED] alpha: retire.column Classes[Capacity] - derived work depends on it: ...
+    [applied] bravo: retire.column Classes[Capacity] - remove retired column block
 
 A plain ``drift-doctor remediate`` (no ``--sync``) skips every
 ``retire.*`` finding with an explanatory reason; a default pass is
@@ -133,12 +164,18 @@ Verify, then note the edge cases:
 - The run is idempotent: a second ``--sync`` pass finds nothing to
   remove.
 - A derived model that never had the column is untouched (no finding).
-- If a derived model's own measures still reference the dropped column,
-  removing the column breaks them at refresh time. ``drift-doctor``
-  does not parse derived-only DAX for you; grep the model for
-  ``[Capacity]`` before syncing if you are unsure.
+- If a derived model's own measures, relationships, sort-by columns, or
+  hierarchy levels still use the dropped column, the removal is
+  ``blocked`` and ``detect`` says which object depends on it. Rewrite or
+  remove the dependent, or keep the column with a ``retain`` override.
+  Report visuals are not checked; search them yourself.
+- If a template measure in the derived model still reads the column
+  (its expression drift was never cascaded), the removal waits as
+  ``auto_skipped_precondition`` until that overwrite lands. With
+  ``measure.expression_drift`` allowlisted, one ``--sync`` run does
+  both, in order.
 - If one franchise must keep the column, revive it for that model
-  first; see section 3, below.
+  first (section 3, below), or declare a ``retain`` override.
 
 3. Recover from an unwanted remediation
 --------------------------------------------
