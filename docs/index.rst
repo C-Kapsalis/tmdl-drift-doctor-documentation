@@ -11,18 +11,24 @@ fix lands in an append-only ledger, and ``--dry-run`` shows the exact
 diffs before anything is written.
 
 ``remediate`` confirms every fix with a question, so a run without a
-terminal — a script, a pipe, a CI job — writes nothing at all. From a
+terminal (a script, a pipe, a CI job) writes nothing at all. From a
 script, name the kinds you mean and pass ``--yes``; see
 :doc:`reference/cli-and-configuration`.
+
+This documentation describes ``drift-doctor`` 1.2.1. Start with
+:doc:`tutorials/getting-started`, then use the how-to guides for the
+recurring jobs and the reference pages to look things up.
 
 Audience
 -----------
 
-This is written for BI developers who already run a template-and-fleet
-setup, or are about to: one governed semantic model, cloned or forked
-per client, tenant, or region. It assumes you are comfortable with
-Power BI's TMDL format and can read a ``fleet.yml`` and a raw TMDL block
-without a primer.
+This is written for BI agencies and platform teams who already run a
+template-and-fleet setup, or are about to: one governed semantic model,
+cloned or forked per client, tenant or region. It assumes you are
+comfortable with Power BI's TMDL format and can read a ``fleet.yml``
+and a raw TMDL block without a primer. Commands are shown for bash and
+for PowerShell where the two differ; the package is
+``tmdl-drift-doctor`` and the command it installs is ``drift-doctor``.
 
 Why this matters
 --------------------

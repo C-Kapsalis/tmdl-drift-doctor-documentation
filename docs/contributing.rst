@@ -11,28 +11,47 @@ docs, and example fleets.
 Development setup
 ---------------------
 
-Requires Python 3.10 or later.
+Requires Python 3.10 or later. ``<your-fork-url>`` is the clone URL
+of your fork.
 
 ::
 
-    $ git clone <your-fork-url> tmdl-drift-doctor
-    $ cd tmdl-drift-doctor
-    $ python -m venv .venv
-    $ source .venv/bin/activate
-    $ pip install -e ".[dev]"
-    $ pytest
-
-(On Windows, activate with ``.venv\Scripts\Activate.ps1`` instead.) The
-editable install puts the ``drift-doctor`` console command on your
-PATH, so code changes are picked up immediately. Try it against the
-bundled example fleet, copied somewhere writable first, since running
-the tool writes state and edits models:
+    # bash / macOS / Linux
+    git clone <your-fork-url> tmdl-drift-doctor
+    cd tmdl-drift-doctor
+    python3 -m venv .venv
+    . .venv/bin/activate
+    pip install -e ".[dev]"
+    pytest
 
 ::
 
-    $ cp -r examples/fleet /tmp/gym-fleet && cd /tmp/gym-fleet
-    $ drift-doctor capture
-    $ drift-doctor detect
+    # PowerShell / Windows
+    git clone <your-fork-url> tmdl-drift-doctor
+    Set-Location tmdl-drift-doctor
+    python -m venv .venv
+    .\.venv\Scripts\Activate.ps1
+    pip install -e ".[dev]"
+    pytest
+
+The editable install puts the ``drift-doctor`` command on your PATH,
+so code changes are picked up immediately. Try it against the bundled
+example fleet, copied somewhere writable first, since running the tool
+writes state and edits models:
+
+::
+
+    # bash / macOS / Linux
+    cp -r examples/fleet /tmp/gym-fleet && cd /tmp/gym-fleet
+    drift-doctor capture
+    drift-doctor detect
+
+::
+
+    # PowerShell / Windows
+    Copy-Item -Recurse examples\fleet $env:TEMP\gym-fleet ; Set-Location $env:TEMP\gym-fleet
+    drift-doctor capture
+    drift-doctor detect
 
 See ``examples/README.md`` in the tool repository for the full guided
 walkthrough (capture, detect, remediate, ledger, plus retirement and
@@ -51,13 +70,13 @@ Project layout
     |                      #   + string-aware normalization and DAX references
     |-- baseline.py        # `capture`: snapshot the template, maintain retirements
     |-- detect.py          # `detect`: typed Findings, coupling guard, JSON report
-    |-- remediate.py       # `remediate`: appliers, preconditions, phases, --converge
+    |-- remediate.py       # `remediate`: appliers, preconditions, phases, batch-safe kinds
     |-- tmdl_edit.py       # guarded raw-block TMDL surgery + write validators
     |-- ledger.py          # append-only JSONL audit trail (retire/revive/remediated)
     |-- ratchet.py         # `ratchet check|tighten`: per-model floors
     |-- audit.py           # `audit`: re-verify applied fixes from the ledger
     |-- review.py          # `review`: the human review checklist
-    |-- interactive.py     # the confirmation runner and the batch-safe rules
+    |-- interactive.py     # the confirmation runner: questions, y/n/a/q, no terminal = no
     |-- annotations.py     # `Category_*` annotations in model.tmdl
     |-- applied_filters.py # the `i-Applied Filters` measure and its coverage
     |-- blast.py           # `diff`: the blast radius of a change
@@ -104,12 +123,14 @@ follows from it:
 2. ``detect`` compares each derived model, parsed live from disk,
    against the baseline plus the retirement record and emits typed
    ``Finding`` objects. It is read-only and CI-friendly, exiting 1 when
-   remediable drift exists.
+   actionable drift exists.
 3. ``remediate`` consumes those findings and applies a per-kind fix,
-   cascading template truth into the derived models.
+   cascading template truth into the derived models. It asks before
+   every write on a terminal and writes nothing without one, unless
+   ``--yes`` names the kinds.
 
-Around them sit seventeen more commands, all documented in the
-CLI and configuration reference: ``ratchet check|tighten`` (the CI
+Around them sit seventeen more commands, all documented in
+:doc:`reference/cli-and-configuration`: ``ratchet check|tighten`` (the CI
 gate), ``audit`` (did the applied fixes stay applied), ``review`` (the
 human queue), ``ledger`` (the record, and a manual revival), and the
 surrounding work of the fleet: ``diff``, ``freshness``, ``groups``,
@@ -125,25 +146,26 @@ Safety gates: do not weaken these without discussion
   applied. Shared expressions are compared only if individually named
   under ``allowlist.expressions``, so a careless cascade can never
   repoint a per-tenant connection parameter.
-- **``--sync``, double-gated deletions.** The only removals ever
+- ``--sync``, double-gated deletions. The only removals ever
   proposed are of objects provably retired from the template
   (``retire.*`` kinds) and of the pristine-category purge items, and
   applying them requires both the allowlist entry and the ``--sync``
-  flag. A default ``remediate`` run is purely additive or overwriting.
+  flag. A default ``remediate`` run only adds and overwrites; the one
+  exception is the per-item offer, on a terminal, to delete a model's
+  own extras.
 - **A question before every write.** ``remediate`` confirms each fix
   with the operator on a terminal. Without a terminal the questions are
   disabled, every item is treated as a "no", and the run writes
   nothing.
-- **``--yes`` is batch-safe, and only with a ``--kind``.** ``--yes``
+- ``--yes`` **is batch-safe, and only with a** ``--kind``. ``--yes``
   applies without asking, but only the kinds in
   ``remediate.BATCH_SAFE_KINDS``, and only when the command line names
   at least one ``--kind``: ``--yes`` on its own is a usage error, so a
   scripted run can never apply every allowlisted kind by accident.
-- **``--sync --confirm-deletions``.** A deletion is never applied under
-  ``--yes``, in a batch run, or without a terminal. In a scheduled job
-  it needs the explicit second confirmation, which is a separate flag
-  from ``--sync`` on purpose: the two decisions are "may this run
-  delete" and "do I mean it".
+- ``--sync --confirm-deletions``. A deletion is never applied under
+  ``--yes``. Without a terminal it needs the explicit second
+  confirmation, which is a separate flag from ``--sync`` on purpose:
+  the two decisions are "may this run delete" and "do I mean it".
 - **Ledger.** Every retirement, revival, and applied fix is one
   immutable, append-only JSONL line. A retirement recorded at
   recapture is the only thing that ever authorizes a downstream
@@ -160,7 +182,7 @@ Safety gates: do not weaken these without discussion
   write one fails with an ``OVERLAY`` error, and a change to one that
   no fix declared fails the run. A model's own work is never
   collateral damage.
-- **``--backup``.** One ``<file>.bak_<timestamp>`` copy per file
+- ``--backup``. One ``<file>.bak_<timestamp>`` copy per file
   before its first write in a run; the copies are removed when the run
   succeeds and kept when anything failed. Git stays the recommended
   undo.
@@ -172,7 +194,7 @@ Safety gates: do not weaken these without discussion
   invariant that a property line is never injected into a DAX
   expression body, which broke every affected measure fleet-wide the
   one time it happened for real. See "Design: safe TMDL surgery" in
-  the CLI and configuration reference.
+  :doc:`reference/cli-and-configuration`.
 
 Adding a new drift kind
 ---------------------------
@@ -182,24 +204,24 @@ Drift kinds are named ``family.detail`` (for example
 their allowlist, so choose it with care. Work through these files in
 order:
 
-1. **``detect.py``.** Emit a ``Finding(kind="your.kind", ...)`` in
+1. ``detect.py``. Emit a ``Finding(kind="your.kind", ...)`` in
    ``detect_model`` where the divergence is discovered. Register the
    kind in the right tuple at the top of the module:
    ``REMEDIABLE_KINDS`` (has an automated fix), ``ADVISORY_KINDS``
-   (report-only, never applied), ``SYNC_ONLY_KINDS`` (offered only in a
-   ``--sync`` run), and, or, ``RETIREMENT_FINDING_KINDS`` (a deletion,
-   automatically ``--sync``-gated). ``ALWAYS_GATING`` holds the kinds
-   that fail a gate whatever the allowlist says. Stash any
+   (the model's own work, never applied), ``SYNC_ONLY_KINDS`` (offered
+   only in a ``--sync`` run) and ``RETIREMENT_FINDING_KINDS`` (a
+   retirement, automatically ``--sync``-gated). ``ALWAYS_GATING``
+   holds the kinds that fail a gate whatever the allowlist says. Stash any
    surgery-time extras on ``Finding.data``.
-2. **``tmdl_edit.py``.** If the fix needs a new text operation, add a
+2. ``tmdl_edit.py``. If the fix needs a new text operation, add a
    guarded raw-block helper there. Splice raw blocks; never rebuild
    TMDL from parsed dataclasses. Confirm ``assert_tmdl_valid`` still
    accepts the output.
-3. **``remediate.py``.** Write an applier, ``_apply_your_kind(fleet, f)``,
+3. ``remediate.py``. Write an applier, ``_apply_your_kind(fleet, f)``,
    that returns ``(label, [FileChange])`` (a ``FileChange`` with
    ``old=None`` creates, ``new=None`` deletes) and register it in the
    ``APPLIERS`` dict. The engine handles overrides, the allowlist,
-   ``--sync``, blocked retirements, dry-run, and pre-write validation;
+   ``--sync``, blocked retirements, dry-run, and the validation before any write;
    appliers must be idempotent, so a second run finds nothing to do. If
    the fix relies on something else existing, add a precondition to
    ``PRECONDITIONS`` and place the kind in ``PHASES``; if an override
@@ -212,8 +234,8 @@ order:
    readable specification) and add coverage under ``tests/`` (detection,
    allowlist gating, remediation, idempotence; safety-critical surgery
    goes in ``tests/test_tmdl_edit_safety.py``).
-5. **Docs.** Document the kind in the drift-kind catalog reference in
-   this documentation set, add it to the drift-kinds table in the tool
+5. **Docs.** Document the kind in :doc:`reference/drift-kinds-and-ledger`
+   (the at-a-glance table and its section), add it to the drift-kinds table in the tool
    repository's ``README.md``, and note any new safety consideration
    under "Do not cascade blindly when" if it introduces one.
 
