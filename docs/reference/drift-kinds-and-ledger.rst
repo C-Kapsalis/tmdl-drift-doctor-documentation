@@ -2,16 +2,39 @@ Drift kinds and ledger reference
 =====================================
 
 Every finding has a dotted ``kind``. The catalog below gives, for each
-kind, what triggers it, what remediation does, the gates it must pass,
-and the cases where cascading it is the wrong call. Then the ledger:
-the append-only record that makes every retirement and every applied
-fix reconstructable later.
+kind this documentation set discusses, what triggers it, what
+remediation does, the gates it must pass, and the cases where cascading
+it is the wrong call. Then the ledger: the append-only record that makes
+every retirement and every applied fix reconstructable later.
 
 Gates legend: A, must be in ``allowlist.kinds``; S, additionally
 requires ``--sync``; none, advisory, never remediated. Any finding can
 also be acknowledged per model by a ``fleet.yml`` override, which
 prints it as an ACK and never remediates it (see
 :doc:`cli-and-configuration`).
+
+.. important::
+
+   **The tool emits fifty-eight kinds, and two more families whose
+   suffix is chosen at run time; this page documents the thirty it
+   discusses.** The field-parameter, refresh-policy, visibility,
+   applied-filter and purge families each carry several kinds of their
+   own, and the list grows with the tool. The authority on the full set
+   is the tool itself:
+
+   - the "Drift kinds" table in the tool's ``README.md``, which carries
+     every kind with its trigger, its remediation and its gates;
+   - ``REMEDIABLE_KINDS`` (a kind with an automated fix),
+     ``ADVISORY_KINDS`` (report-only), ``SYNC_ONLY_KINDS`` (the kinds
+     only a ``--sync`` run offers) and ``RETIREMENT_FINDING_KINDS`` (the
+     deletions) in ``tmdl_drift_doctor/detect.py``;
+   - ``BATCH_SAFE_KINDS`` and ``DESTRUCTIVE_PREFIXES`` in
+     ``tmdl_drift_doctor/remediate.py``, which decide what a ``--yes``
+     run may apply and what a deletion is.
+
+   A kind that is not in ``REMEDIABLE_KINDS`` and not in
+   ``ADVISORY_KINDS`` still shows up in ``detect``; it is simply not
+   something the tool will write for you.
 
 Missing objects (template to derived)
 -------------------------------------------
@@ -26,7 +49,8 @@ Missing objects (template to derived)
    * - ``table.missing``
      - A baseline table is absent from the derived model
      - Copy the template's table file (all lineage tags regenerated),
-       register ``ref table`` in ``model.tmdl``. The partition source
+       register ``ref table`` in ``model.tmdl``, and, for a Power Query
+       table, its ``PBI_QueryOrder`` entry. The partition source
        is the template's; review it.
      - A
    * - ``column.missing``
@@ -39,8 +63,23 @@ Missing objects (template to derived)
        included (fresh lineage tag)
      - A
    * - ``mapping_row.missing``
-     - A baseline mapping-table row (by row key) is absent
+     - A baseline mapping-table row is absent
      - Insert the template's row tuple after the last existing row
+     - A
+   * - ``mapping_category.missing``
+     - A whole template category is absent from an encoded mapping
+       table
+     - Re-encode with the model's rows first and the template rows
+       appended; the write is verified and read back
+     - A
+   * - ``expression.missing``
+     - The template declares a shared expression and the model does
+       not. Reported whether or not the name is under
+       ``allowlist.expressions``; that list only scopes content
+       comparison.
+     - Append the template's block after the existing ones, in
+       alphabetical order, with a fresh lineage tag. A connection
+       parameter is never written.
      - A
 
 The detector walks the committed baseline, not the live template, and
@@ -61,6 +100,9 @@ Do not cascade blindly when:
 - **``column.missing``, source-backed column.** The model validates but
   the next refresh fails if the tenant's source cannot supply the
   column. Check the source first.
+- **``expression.missing``, and the expression is a connection
+  parameter.** The tool never writes one: copy the declaration from the
+  template and set this model's own value.
 - **The removal was deliberate.** A tenant may have removed the object
   on purpose. That is a policy conversation, not a bug: record it as an
   ``absent`` override with its reason, so the finding becomes an ACK
@@ -93,10 +135,11 @@ Divergence on shared objects
      - Same block overwrite
      - A
    * - ``expression.drift``
-     - An allowlist-named shared expression differs or is absent
-     - Replace or append exactly that expression block; everything
-       else in ``expressions.tmdl`` stays byte-untouched
-     - A (and named in ``allowlist.expressions``; gates detection too)
+     - An allowlist-named shared expression differs
+     - Replace exactly that expression block, keeping each declaration's
+       own lineage tag; everything else in ``expressions.tmdl`` stays
+       byte-untouched
+     - A (and named in ``allowlist.expressions``)
 
 When a measure's expression and properties both drift, one
 ``measure.expression_drift`` finding is emitted and the block overwrite
@@ -104,12 +147,12 @@ fixes both. Property comparison uses a fixed set, ``dataType``,
 ``formatString``, ``displayFolder``, ``summarizeBy``, ``sourceColumn``,
 ``sortByColumn``, ``isHidden``; lineage tags, annotations, and other
 tooling metadata are excluded on purpose, so a model resaved on another
-machine does not light up the fleet. Expression comparison is
-normalized: reformatting, reindenting, or adding a comment never
-registers as drift, only a semantic-text change does.
+machine does not light up the fleet.
 
-Normalization details, applied to measure DAX and to shared M
-expressions alike:
+Measure DAX is compared in a **normalized** form: reformatting,
+reindenting, or adding a comment never registers as drift, only a
+semantic-text change does. Normalization details, applied to measure
+DAX:
 
 - ``//``, ``--``, and ``/* */`` comments are stripped only outside
   string literals and quoted identifiers, so a changed
@@ -118,6 +161,17 @@ expressions alike:
   trimmed, spaced as ``k = v``, and sorted. Power BI Desktop reorders
   these bags on save; the order carries no meaning, the values do.
 - Fence markers and runs of whitespace collapse.
+
+.. important::
+
+   **A shared expression is compared differently from a measure.** Since
+   v1.2.0 the comparison form of a shared expression drops only the
+   lineage-tag lines and canonicalizes the ``meta [...]`` bag;
+   **everything else, doc comments and ``//`` comments included, is
+   compared as written.** A changed comment is drift on its own. A name
+   declared more than once is compared on every declaration, and the
+   fix rewrites each differing declaration with its own lineage tag
+   kept.
 
 Do not cascade blindly when:
 
@@ -163,8 +217,19 @@ Measure hosts
      - The derived model carries a template measure's name on more than
        one table (the template's host plus another, or two non-host
        tables). The engine will not load such a model.
-     - None; reported only. Remove the stale copy by hand.
-     - none
+     - Remove the stale copy: the copy on the template's host stays and
+       the other one is deleted. It is no longer advisory; allowlist the
+       kind to apply it.
+     - A
+   * - ``measure.renamed``
+     - The template renamed a measure: one missing name and one
+       derived-only name share a core (the name with one leading ``-``,
+       ``_``, ``!``, ``#``, ``^`` or letter-and-dash stripped, trimmed,
+       lower-cased)
+     - Rename the derived declaration, rewrite every DAX reference (the
+       field-parameter ``NAMEOF`` rows included) and, with
+       pbi-plot-styler installed, every report binding
+     - A
 
 A move waits (precondition) while the template's host table is missing
 from the model, while the host already carries the name, or while any
@@ -183,9 +248,15 @@ Do not cascade blindly when:
   tenant may keep a measure on another table for its display folder,
   perspective, or field-list layout. Declare that with an ``expression``
   override rather than letting the move repeat.
-- **``measure.duplicate_host``.** Deciding which copy is stale is a
-  human call: compare the two bodies, keep the one that matches the
-  template (or the one reports bind to), and delete the other.
+- **``measure.duplicate_host``.** The tool keeps the copy on the
+  template's host and removes the other, which is the right answer
+  whenever the template's copy is the current one. When the stale copy
+  is the one the reports bind to, remove it by hand and declare the
+  move as an ``expression`` override instead, so the cascade stops
+  repeating.
+- **``measure.renamed``, and the two names are not a rename.** The
+  pairing is a name heuristic; an ambiguous core is never paired, and
+  an override-declared name is never paired either.
 
 Relationships
 -----------------
@@ -208,6 +279,13 @@ Relationships
      - The signature exists but compared properties differ
      - Overwrite the derived block with the template's; the derived
        block name (GUID) is kept
+     - A
+   * - ``relationship.casing_mismatch``
+     - A relationship endpoint names a table or column that the
+       template spells another way
+     - Rewrite the endpoint to the template's spelling. Reported once
+       per mismatching part, instead of as a missing plus an extra
+       relationship.
      - A
    * - ``relationship.extra``
      - A derived relationship between two template tables with no
@@ -261,6 +339,14 @@ Extras (derived to template), advisory
      - A derived column on a shared table with no template counterpart
      - None; reported only
      - none
+   * - ``extra.mapping_row``
+     - A model-only row in an encoded mapping table
+     - None; reported only
+     - none
+   * - ``relationship.extra``
+     - A derived relationship between two shared tables
+     - None; reported only
+     - none
 
 The template is a core, not a superset: every derived model must
 contain it, but a derived model may legitimately extend beyond it, so
@@ -269,9 +355,12 @@ wrong. An extra might be tenant customization to keep, an experiment,
 or debris from a template retirement, and presence alone cannot tell
 those apart; only a recorded ``retired`` ledger event can, which is why
 ``extra.*`` has no applier at all, not "off by default," structurally
-absent. Derived-only tables (with everything on them) and derived-only
-mapping rows are not findings at all; whole-surface extensions are the
-clearest form of legitimate customization.
+absent. Derived-only tables (with everything on them) are not findings
+at all; whole-surface extensions are the clearest form of legitimate
+customization. A derived-only **row** in an encoded mapping table, on
+the other hand, *is* a finding now: it is reported as
+``extra.mapping_row``, still advisory, so a reader sees the drift
+without the tool ever removing a tenant's own row.
 
 Usually the right response to an advisory is nothing: a stable set of
 extras per model is that tenant's custom surface, and ``detect`` exits
@@ -279,7 +368,9 @@ extras per model is that tenant's custom surface, and ``detect`` exits
 it to the template and recapture; the finding disappears because the
 object is now core. If an extra is genuinely debris, delete it by hand;
 the suite does not do this for any object it cannot prove was once
-template surface.
+template surface. On a terminal, ``remediate`` offers to delete a
+model's own extras, one question each; a batch run and a ``--yes`` run
+never do.
 
 Retirements (ledger-driven deletions)
 -------------------------------------------
@@ -297,8 +388,9 @@ derived model still carries.
      - Gates
    * - ``retire.table``
      - Ledger-retired table still in the derived model
-     - Delete the table file, deregister from ``model.tmdl``, and remove
-       the template-owned or ledger-retired relationships touching it
+     - Delete the table file, deregister from ``model.tmdl`` and from
+       the query order, and remove the template-owned or ledger-retired
+       relationships touching it
      - A + S
    * - ``retire.column``
      - Ledger-retired column still on a shared table
@@ -313,12 +405,45 @@ derived model still carries.
      - Ledger-retired row still in a mapping table
      - Remove exactly that row tuple; sibling rows are kept
      - A + S
+   * - ``retire.mapping_category``
+     - Ledger-retired whole category still in an encoded mapping table
+     - Remove the category's rows. ``blocked`` when the model added
+       its own keys to that category.
+     - A + S
    * - ``retire.relationship``
      - Ledger-retired relationship (by signature) still in the derived
        model. Not emitted when an endpoint table or column has its own
        retirement finding, which sweeps the relationship instead.
      - Remove the relationship block
      - A + S
+   * - ``retire.source_view``
+     - The template re-pointed a table to a new source view (the
+       ledger's ``source_view_change`` event) and the model still reads
+       the old one
+     - Rewrite the view in every spelling (bare or quoted helper call,
+       an inline query in the partition and the refresh policy
+       together). A model on a view it declares is retained; a model on
+       another view needs a person, and both go to the run digest.
+     - A + S
+   * - ``retire.fieldparam_entry``
+     - A field-parameter row still points at a measure the template
+       retired
+     - Remove exactly those rows; every other row, the row order and
+       the table's own formatting stay as they were
+     - A + S
+   * - ``retire.ifilter_regen``
+     - The ``i-Applied Filters`` measure names an object this run
+       removes, so it would keep a stale branch
+     - Regenerate the measure (needs pbip-model-forge)
+     - A + S
+   * - ``retire.stranded_ref``
+     - Live DAX still names a table the ledger retired and the model
+       no longer declares
+     - Strip a reference that lives inside a dead sensor operand; a
+       measure that reads the retired table for its rows is left to a
+       person. Fails a gate whatever the allowlist says, and a deletion
+       always needs its own confirmation.
+     - A
 
 Additions are provable by presence in the template; removals cannot
 work the same way, since "absent from the template" is also exactly
@@ -420,12 +545,26 @@ added or removed):
        dependents fixed, ledger-retired ones removed).
 
 An unmet precondition is ``auto_skipped_precondition`` with the reason.
-Fixes run in dependency order (tables, columns, expressions, mapping
-rows, measures, relationships, then retirements), so most chains
-complete in one pass. When a fix only becomes visible after another
-lands (a moved measure whose body also differs), ``remediate
---converge`` re-detects and re-applies until nothing changes, at most
-four passes.
+Fixes run in dependency order, so most chains complete in one pass.
+When a fix only becomes visible after another lands (a moved measure
+whose body also differs), ``remediate --converge`` re-detects and
+re-applies until nothing changes, at most four passes.
+
+The full order is: ``table.missing``, ``column.missing``,
+``column.property_drift``, ``expression.drift``, ``expression.missing``,
+``mapping_row.missing``, ``measure.renamed``, ``measure.missing``,
+``measure.wrong_host``, ``measure.duplicate_host``,
+``measure.expression_drift``, ``measure.property_drift``,
+``relationship.missing``, ``relationship.modified``,
+``relationship.casing_mismatch``, ``retire.relationship``,
+``retire.measure``, ``retire.mapping_row``, ``retire.mapping_category``,
+``retire.source_view``, ``retire.column``, ``retire.table``, the purge
+block (``purge.fieldparam_entry``, ``purge.measure``, ``purge.column``,
+``purge.relationship``, ``purge.zmap_row``, ``purge.table``), then
+``retire.fieldparam_entry``, ``purge.ifilter_regen`` and
+``retire.ifilter_regen``. The field-parameter and mapping kinds
+(``fieldparam.*``, ``mapping_category.missing``,
+``category_annotation.undeclared``) follow in their own phase.
 
 Exit-code semantics
 -----------------------
@@ -434,7 +573,9 @@ Exit-code semantics
 gating is not ``advisory``. Actionable means allowlisted, not advisory,
 and not acknowledged by an override; advisories, non-allowlisted kinds,
 and overridden findings alone exit 0. ``detect`` exits 3 when a model
-could not be parsed. ``remediate`` exits 1 only when an apply failed.
+could not be parsed, and **2** when the baseline is stale or the
+configuration is broken — a stale baseline is a configuration problem,
+not a finding. ``remediate`` exits 1 only when an apply failed.
 ``ratchet check`` exits 1 on a rise or a resurrection and 2 on an
 untrusted report; ``audit`` exits 4 on a reverted fix. The full table is
 in :doc:`cli-and-configuration`.
@@ -466,7 +607,7 @@ Common fields
      - UTC ISO-8601 timestamp, appended automatically
    * - ``event``
      - string
-     - ``retired`` / ``revived`` / ``remediated``
+     - ``retired`` / ``revived`` / ``remediated`` / ``repointed``
    * - ``kind``
      - string
      - See per-event tables below
@@ -475,8 +616,10 @@ Common fields
      - Object reference (formats below)
 
 Reference formats: tables use ``TableName``; columns and measures use
-``Table[Object]``; mapping rows use ``Table/row_key``; relationships use
-their field signature ``From[col] -> To[col]`` (for example
+``Table[Object]``; mapping rows use ``Table/row_key`` (or
+``Table/category/key`` in an encoded table); mapping categories use
+``Table/category``; relationships use their field signature
+``From[col] -> To[col]`` (for example
 ``Visits[PromoId] -> Promotions[PromoId]``).
 
 ``retired``
@@ -491,13 +634,27 @@ existence that authorizes later removal.
     {"ts": "2026-07-17T09:30:11+00:00", "event": "retired", "kind": "measure",
      "ref": "Visits[Peak Hour Visits]", "source": "capture"}
 
-``kind`` is one of ``table``, ``column``, ``measure``,
-``mapping_row``, ``relationship``. Mapping-row events additionally
-carry ``table`` and ``row_key``. Table events carry ``objects``, the
-``Table[Object]`` refs of the columns and measures the table held when
-it left the template; the coupling guard uses it to tell template-era
-objects from the derived model's own work. A relationship is recorded
-even when its endpoint table was dropped in the same capture.
+``kind`` is one of ``table``, ``column``, ``measure``, ``mapping_row``,
+``mapping_category``, ``relationship``. Mapping-row events additionally
+carry ``table`` and ``row_key``; a mapping-category event carries
+``table``, ``category`` and the ``keys`` it held. Table events carry
+``objects``, the ``Table[Object]`` refs of the columns and measures the
+table held when it left the template; the coupling guard uses it to tell
+template-era objects from the derived model's own work. A relationship
+is recorded even when its endpoint table was dropped in the same capture.
+
+``repointed``
+~~~~~~~~~~~~~~~~
+
+Appended by ``capture`` once per template table that was re-pointed to
+another source view. It is a ``source_view_change`` event, and it is
+what authorizes the ``retire.source_view`` cascade.
+
+::
+
+    {"ts": "...", "event": "repointed", "kind": "source_view_change",
+     "ref": "Visits:old_view->new_view", "table": "Visits",
+     "old_view": "old_view", "new_view": "new_view", "source": "capture"}
 
 ``revived``
 ~~~~~~~~~~~~~~

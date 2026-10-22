@@ -7,7 +7,7 @@
 project = 'tmdl-drift-doctor'
 copyright = '2026, Christoforos Kapsalis'
 author = 'Christoforos Kapsalis'
-release = '1.1.0'
+release = '1.2.0'
 
 extensions = [
     'sphinx.ext.intersphinx',

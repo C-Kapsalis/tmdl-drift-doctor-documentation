@@ -44,20 +44,46 @@ Project layout
 ::
 
     src/tmdl_drift_doctor/
-    |-- cli.py          # Click entry point: capture / detect / remediate /
-    |                   #   ratchet / audit / review / ledger
-    |-- fleet.py        # fleet.yml loader + Fleet (paths, allowlist, gating, overrides)
-    |-- overrides.py    # resolve per-model overrides; what each one acknowledges
-    |-- tmdl.py         # TMDL parser (tables, measures, relationships, hierarchies)
-    |                   #   + string-aware normalization and DAX references
-    |-- baseline.py     # `capture`: snapshot the template, maintain retirements
-    |-- detect.py       # `detect`: typed Findings, coupling guard, JSON report
-    |-- remediate.py    # `remediate`: appliers, preconditions, phases, --converge
-    |-- tmdl_edit.py    # guarded raw-block TMDL surgery + write validators
-    |-- ledger.py       # append-only JSONL audit trail (retire/revive/remediated)
-    |-- ratchet.py      # `ratchet check|tighten`: per-model floors
-    |-- audit.py        # `audit`: re-verify applied fixes from the ledger
-    `-- review.py       # `review`: the human review checklist
+    |-- cli.py             # Click entry point: the 20 commands
+    |-- fleet.py           # fleet.yml loader + Fleet (paths, allowlist, gating, overrides)
+    |-- overrides.py       # resolve per-model overrides; what each one acknowledges
+    |-- tmdl.py            # TMDL parser (tables, measures, relationships, hierarchies)
+    |                      #   + string-aware normalization and DAX references
+    |-- baseline.py        # `capture`: snapshot the template, maintain retirements
+    |-- detect.py          # `detect`: typed Findings, coupling guard, JSON report
+    |-- remediate.py       # `remediate`: appliers, preconditions, phases, --converge
+    |-- tmdl_edit.py       # guarded raw-block TMDL surgery + write validators
+    |-- ledger.py          # append-only JSONL audit trail (retire/revive/remediated)
+    |-- ratchet.py         # `ratchet check|tighten`: per-model floors
+    |-- audit.py           # `audit`: re-verify applied fixes from the ledger
+    |-- review.py          # `review`: the human review checklist
+    |-- interactive.py     # the confirmation runner and the batch-safe rules
+    |-- annotations.py     # `Category_*` annotations in model.tmdl
+    |-- applied_filters.py # the `i-Applied Filters` measure and its coverage
+    |-- blast.py           # `diff`: the blast radius of a change
+    |-- cascade.py         # the cascade summary: is each model a clean superset?
+    |-- category_filters.py # the `f-` category gates
+    |-- enrichment.py      # view-enrichment notices and their registry
+    |-- families.py        # named sets of fleet models
+    |-- fieldparams.py     # field-parameter tables: a lossless row reader/writer
+    |-- freshness.py       # `freshness`: a branch that predates the main line
+    |-- groups.py          # analysis groups: the graph, the plan, the layered drop
+    |-- hygiene.py         # override hygiene: a declaration that protects nothing
+    |-- mapping_codec.py   # the encoded "Enter data" string codec
+    |-- mappings.py        # encoded mapping tables in the drift pipeline
+    |-- markers.py         # client extension markers in derived-only text
+    |-- measure_ops.py     # named measure removals outside the retirement channel
+    |-- metrics.py         # template metrics and the count floors
+    |-- named.py           # `remediate --ref`: push named measures to every model
+    |-- purge.py           # the pristine-category purge (`purge.*`, sync mode)
+    |-- receipt.py         # the sync receipt (`<state_dir>/last_sync.json`)
+    |-- refresh.py         # incremental-refresh parity for fact tables
+    |-- renames.py         # measure and column renames; the rename map
+    |-- roles.py           # table roles and measure classes: the one definition
+    |-- selectors.py       # selector measures: SWITCH arms
+    |-- sensors.py         # removing a dead table sensor from a DAX expression
+    |-- sources.py         # source identity: which view a partition reads
+    |-- visibility.py      # the visibility rules
 
     tests/              # pytest suite + tests/fixtures/fleet/ (the seeded fleet)
     examples/fleet/     # runnable gym-chain fleet with drift pre-seeded
@@ -67,10 +93,10 @@ in this separate ``tmdl-drift-doctor-documentation`` repository,
 published on Read the Docs.
 
 The mental model
---------------------
+---------------------
 
-Three commands form a pipeline, and every design decision follows from
-it:
+Three commands form the core pipeline, and every design decision
+follows from it:
 
 1. ``capture`` snapshots the template into a committed baseline and
    maintains the retirement record; anything dropped from the template
@@ -82,6 +108,15 @@ it:
 3. ``remediate`` consumes those findings and applies a per-kind fix,
    cascading template truth into the derived models.
 
+Around them sit seventeen more commands, all documented in the
+CLI and configuration reference: ``ratchet check|tighten`` (the CI
+gate), ``audit`` (did the applied fixes stay applied), ``review`` (the
+human queue), ``ledger`` (the record, and a manual revival), and the
+surrounding work of the fleet: ``diff``, ``freshness``, ``groups``,
+``mapping``, ``overrides``, ``purge``, ``rename``, ``renames``,
+``retire``, ``add-branch``, ``fieldparam``, ``fleet`` and
+``enrichment``.
+
 Safety gates: do not weaken these without discussion
 ----------------------------------------------------------
 
@@ -92,9 +127,23 @@ Safety gates: do not weaken these without discussion
   repoint a per-tenant connection parameter.
 - **``--sync``, double-gated deletions.** The only removals ever
   proposed are of objects provably retired from the template
-  (``retire.*`` kinds), and applying them requires both the allowlist
-  entry and the ``--sync`` flag. A default ``remediate`` run is purely
-  additive or overwriting.
+  (``retire.*`` kinds) and of the pristine-category purge items, and
+  applying them requires both the allowlist entry and the ``--sync``
+  flag. A default ``remediate`` run is purely additive or overwriting.
+- **A question before every write.** ``remediate`` confirms each fix
+  with the operator on a terminal. Without a terminal the questions are
+  disabled, every item is treated as a "no", and the run writes
+  nothing.
+- **``--yes`` is batch-safe, and only with a ``--kind``.** ``--yes``
+  applies without asking, but only the kinds in
+  ``remediate.BATCH_SAFE_KINDS``, and only when the command line names
+  at least one ``--kind``: ``--yes`` on its own is a usage error, so a
+  scripted run can never apply every allowlisted kind by accident.
+- **``--sync --confirm-deletions``.** A deletion is never applied under
+  ``--yes``, in a batch run, or without a terminal. In a scheduled job
+  it needs the explicit second confirmation, which is a separate flag
+  from ``--sync`` on purpose: the two decisions are "may this run
+  delete" and "do I mean it".
 - **Ledger.** Every retirement, revival, and applied fix is one
   immutable, append-only JSONL line. A retirement recorded at
   recapture is the only thing that ever authorizes a downstream
@@ -103,8 +152,18 @@ Safety gates: do not weaken these without discussion
 - **Baseline-recapture discipline.** ``detect`` and ``remediate``
   refuse to run on a stale baseline, since a stale baseline
   misclassifies drift: a retired object looks missing and gets
-  resurrected. ``--allow-stale`` overrides, at the caller's own risk.
+  resurrected. The refusal is a configuration error, so it exits 2 and
+  never 1. ``--allow-stale`` overrides, at the caller's own risk.
   Recapture the moment the template changes.
+- **OVERLAY protection.** A file a model has and the template does not
+  is hashed before the run writes anything. An ordinary fix that would
+  write one fails with an ``OVERLAY`` error, and a change to one that
+  no fix declared fails the run. A model's own work is never
+  collateral damage.
+- **``--backup``.** One ``<file>.bak_<timestamp>`` copy per file
+  before its first write in a run; the copies are removed when the run
+  succeeds and kept when anything failed. Git stays the recommended
+  undo.
 - **Guarded TMDL surgery.** Edits splice raw text blocks, never
   re-serialize from parsed fields, so annotations and formatting
   survive. Lineage tags are regenerated on insert and preserved on
@@ -127,9 +186,11 @@ order:
    ``detect_model`` where the divergence is discovered. Register the
    kind in the right tuple at the top of the module:
    ``REMEDIABLE_KINDS`` (has an automated fix), ``ADVISORY_KINDS``
-   (report-only, never applied), and, or, ``RETIREMENT_FINDING_KINDS``
-   (a deletion, automatically ``--sync``-gated). Stash any surgery-time
-   extras on ``Finding.data``.
+   (report-only, never applied), ``SYNC_ONLY_KINDS`` (offered only in a
+   ``--sync`` run), and, or, ``RETIREMENT_FINDING_KINDS`` (a deletion,
+   automatically ``--sync``-gated). ``ALWAYS_GATING`` holds the kinds
+   that fail a gate whatever the allowlist says. Stash any
+   surgery-time extras on ``Finding.data``.
 2. **``tmdl_edit.py``.** If the fix needs a new text operation, add a
    guarded raw-block helper there. Splice raw blocks; never rebuild
    TMDL from parsed dataclasses. Confirm ``assert_tmdl_valid`` still
@@ -143,6 +204,9 @@ order:
    the fix relies on something else existing, add a precondition to
    ``PRECONDITIONS`` and place the kind in ``PHASES``; if an override
    should be able to acknowledge it, add it to ``overrides.SUPPRESSES``.
+   A kind a ``--yes`` run may apply without a person belongs in
+   ``BATCH_SAFE_KINDS``; a kind that deletes something belongs in
+   ``DESTRUCTIVE_PREFIXES``.
 4. **Fixtures and tests.** Seed the new drift in
    ``tests/fixtures/fleet/`` (the fixture fleet doubles as the suite's
    readable specification) and add coverage under ``tests/`` (detection,
@@ -166,7 +230,10 @@ For changes that touch detection, remediation, or TMDL surgery, also
 exercise the CLI end to end against a fresh copy of the example fleet
 (``capture``, ``detect``, ``remediate --dry-run``, ``remediate``, a
 second ``remediate`` for idempotence, ``ledger``) and confirm the
-output matches expectations. New behavior needs new tests.
+output matches expectations. Exercise the non-interactive path too: a
+``remediate`` with no terminal must apply nothing, and a
+``remediate --yes --kind ...`` must apply only the batch-safe kinds.
+New behavior needs new tests.
 
 Commit and PR conventions
 ------------------------------
@@ -201,4 +268,4 @@ License
 -----------
 
 By contributing, you agree that your contributions are licensed under
-the project's MIT License, the same as the rest of the project.
+the project's MIT License, the same as for the rest of the project.

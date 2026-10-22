@@ -13,11 +13,13 @@ Every gate command is read-only:
 - ``drift-doctor detect`` exits ``0`` when nothing is actionable
   (only advisories, non-allowlisted kinds, overridden findings, or
   findings on ``gating: advisory`` models), ``1`` when actionable
-  drift exists, and ``3`` when a model could not be parsed. A stale
+  drift exists, ``2`` when the configuration is broken or the baseline
+  is stale, and ``3`` when a model could not be parsed. A stale
   baseline (the template changed without a recapture) fails with a
   message, which is a feature: a pull request that edits the template
   but forgets ``drift-doctor capture`` fails loudly instead of
-  producing wrong findings.
+  producing wrong findings. It exits **2**, not 1, so the job can tell
+  "the run could not be done" from "the model has drift".
 - ``drift-doctor ratchet check`` exits ``1`` when any model's drift
   rose above its floor or a retired object is in a model, and ``2``
   when it cannot trust its input.
@@ -49,13 +51,52 @@ change make drift worse" instead.
        $ drift-doctor ratchet tighten
          alpha: recorded at 6
          bravo: recorded at 6
-       floors written: .drift-doctor/floors.json
+       floors written: /tmp/gym-fleet/.drift-doctor/floors.json
 
 2. Make ``ratchet check`` the required check on pull requests. It fails
    when any model's actionable count rises, in total or for any single
-   kind, and names the model and kind.
+   **kind head**, and names the model and the head:
+
+   ::
+
+       $ drift-doctor ratchet check
+       [RISE] alpha: TOTAL rose 5 -> 6
+       [RISE] alpha: category 'column' rose 0 -> 1
+       [RISE] bravo: TOTAL rose 6 -> 7
+       [RISE] bravo: category 'column' rose 2 -> 3
+         alpha: column 1 (column.missing 1)
+         alpha: expression 2 (expression.drift 2)
+         alpha: measure 3 (measure.expression_drift 1, measure.property_drift 1, measure.wrong_host 1)
+         bravo: column 3 (column.missing 2, column.property_drift 1)
+         bravo: mapping_row 1 (mapping_row.missing 1)
+         bravo: relationship 2 (relationship.missing 1, relationship.modified 1)
+         bravo: table 1 (table.missing 1)
+       no ledger-retired object resurrected
+       DRIFT RATCHET RED
+
+   The floor is counted per **kind head** — the text before the first
+   dot. ``measure.missing`` and ``measure.expression_drift`` both roll
+   up to ``measure``, so one measure finding of any kind raises the
+   same head. The floors file records it as ``by_category``; a
+   version-1 file keyed by kind is read as-is and rolled up on load, and
+   the next ``tighten`` rewrites it in head form.
+
+   What counts is every finding a sync could act on, whatever
+   ``allowlist.kinds`` says, minus overridden findings, advisory and
+   report-only kinds, and the model-intrinsic regenerations
+   (``ifilter.*``, ``visibility.*``, ``ffilter.coverage_gap``). The
+   allowlist decides what ``remediate`` writes, never what the ratchet
+   counts.
+
 3. After remediation lands, run ``ratchet tighten`` and commit the
    lowered floors in the same change. ``tighten`` never raises a floor.
+
+   ::
+
+       $ drift-doctor ratchet tighten
+         alpha: 6 -> 5
+       floors written: /tmp/gym-fleet/.drift-doctor/floors.json
+
 4. Never raise a floor by hand without saying why in the change that
    does it. Floors measure debt; a raised floor is new debt someone
    agreed to.
@@ -65,9 +106,20 @@ Two rules are stricter than a floor:
 - **Resurrections are hard zero.** A ``retire.*`` finding means an
   object the ledger proves was retired from the template is still or
   again in a model, typically from a branch whose base predates the
-  retirement. It is never floored and fails ``check`` by name. Clear it
-  with ``remediate --sync``, or declare a ``retain`` override if the
-  model must keep it.
+  retirement. It is never floored and fails ``check`` by name, in its
+  own block:
+
+  ::
+
+      RESURRECTION — ledger-retired objects are back (hard zero, never floored):
+        alpha: retire.measure Classes[Class Fill Rate %]
+        alpha: cascade it with `drift-doctor remediate --model alpha --kind retire --sync`, or declare a `retain` override
+      ...
+    DRIFT RATCHET RED — RESURRECTION
+
+  Clear it with a ``--sync`` remediation, or declare a ``retain``
+  override if the model must keep it. ``--include-advisory`` extends
+  the hard zero to a retirement that no sync can apply.
 - **Provenance is checked.** ``tighten`` only accepts a full-fleet,
   unfiltered, error-free report; ``check`` also refuses kind-filtered
   and errored reports.
@@ -150,9 +202,22 @@ template, since those are the ones that create new drift:
 
 **Never remediate in CI.** ``remediate`` belongs in a maintainer's
 working tree, where the diffs get reviewed and committed deliberately.
+This is not a style preference: ``remediate`` confirms every fix with
+a question, and a CI job has no terminal, so a bare ``remediate`` in a
+job applies **nothing** and says so::
+
+    note: stdin is not a terminal, so questions are disabled and every item is treated as 'no' (non-interactive). Pass --yes with --kind to apply batch-safe kinds.
+
 If you want automated fix-up pull requests, run ``remediate --dry-run``
 in CI, post the diff for review, and keep the actual write on a
-human's machine.
+human's machine. A job that does write has to name the kinds and say
+that it means it::
+
+    drift-doctor remediate --yes --kind measure.missing
+
+and even then it never deletes anything: a deletion needs an
+interactive yes, or ``--sync`` together with
+``--confirm-deletions``.
 
 **Scoped checks.** ``--model`` and ``--kind`` narrow ``detect``, for
 example a nightly job that only watches retirements. Scoped reports are

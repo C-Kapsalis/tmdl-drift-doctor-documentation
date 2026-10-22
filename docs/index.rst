@@ -10,6 +10,11 @@ allowlist-gated pipeline. Deletions need a second opt-in, every applied
 fix lands in an append-only ledger, and ``--dry-run`` shows the exact
 diffs before anything is written.
 
+``remediate`` confirms every fix with a question, so a run without a
+terminal — a script, a pipe, a CI job — writes nothing at all. From a
+script, name the kinds you mean and pass ``--yes``; see
+:doc:`reference/cli-and-configuration`.
+
 Audience
 -----------
 
