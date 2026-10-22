@@ -194,7 +194,8 @@ A closing line counts ``actionable``, ``advisory``, ``overridden``, and
 ``errors``, and the run ends with the cascade report: one ``[OK  ]`` or
 ``[GAP ]`` block per model, carrying the model's shape (``fact_tables``,
 ``f_measures``, ``user_facing``, ``helpers``) and what is missing, then
-``Summary: <passing>/<total> models in cascade``.
+``Summary: <passing>/<total> models in cascade`` (with ``(N not
+checked)`` when a model could not be looked at).
 
 JSON report (schema version 2)
 """"""""""""""""""""""""""""""""""
@@ -277,7 +278,10 @@ JSON report (schema version 2)
    * - ``models.<name>.counts``
      - ``actionable``, ``advisory``, ``overridden``,
        ``not_allowlisted``, and ``by_kind`` (actionable findings per
-       kind).
+       kind). The two counters can overlap: a kind that always gates
+       (``model.count_below_template``, ``retire.stranded_ref``) counts
+       as actionable even when the allowlist does not name it, and it
+       also counts as not-allowlisted.
 
 This replaces the 1.0 output (a bare JSON array of findings). Consumers
 of the old shape must read ``models.<name>.findings`` instead.

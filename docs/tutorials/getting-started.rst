@@ -175,9 +175,11 @@ makes it a CI gate. A few more things to notice:
   without asking (see
   :doc:`../reference/drift-kinds-and-ledger`).
 - The two ``model.count_below_template`` findings say that bravo holds
-  fewer measures and fewer DAX expressions than the template does. They
-  print ``[not allowlisted]`` because the kind has no automated fix at
-  all; a model that lost a whole measure is a count floor, not backlog.
+  fewer measures and fewer DAX expressions than the template does. The
+  kind is not in the allowlist, so it prints ``[not allowlisted]``, and
+  it has no automated fix at all — but it still counts as actionable,
+  because a model that lost a whole measure is a count floor, not
+  backlog.
 - The closing ``[GAP ]`` block is the cascade report: one line per
   model with the shape of the model (fact tables, filter measures,
   user-facing measures, helpers) and what is missing, then the fleet
